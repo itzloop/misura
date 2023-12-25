@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"flag"
@@ -15,7 +16,6 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/google/uuid"
 	"golang.org/x/tools/imports"
 )
 
@@ -35,22 +35,22 @@ type {{$wn}} struct {
     wrapped {{.WrapperTypeName}}
     metrics interface{
         // Failure will be called when err != nil passing the duration and err to it
-        Failure(pkg, intr, method string, duration time.Duration, err error)
+        Failure(ctx context.Context, pkg, intr, method string, duration time.Duration, err error)
 
         // Success will be called if err == nil passing the duration to it
-        Success(pkg, intr, method string,duration time.Duration)
+        Success(ctx context.Context, pkg, intr, method string,duration time.Duration)
 
         // Total will be called as soon as the function is called.
-        Total(pkg, intr, method string)
+        Total(ctx context.Context, pkg, intr, method string)
     }
 }
 
 func New{{$wn}}(
     wrapped {{.WrapperTypeName}},
     metrics interface{
-        Failure(pkg, intr, method string, duration time.Duration, err error)
-        Success(pkg, intr, method string, duration time.Duration)
-        Total(pkg, intr, method string)
+        Failure(ctx context.Context, pkg, intr, method string, duration time.Duration, err error)
+        Success(ctx context.Context, pkg, intr, method string,duration time.Duration)
+        Total(ctx context.Context, pkg, intr, method string)
     },
 ) *{{$wn}} {
     return &{{$wn}}{ 
@@ -68,23 +68,38 @@ func (w *{{$wn}}) {{ .MethodSigFull }} {
     // TODO time package conflicts
     {{ $.StartTimeName }} := time.Now()
     {{- end }}
-    w.metrics.Total("{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}")
-{{- if .NamedResults }}
+
+{{- if .HasCtx }}
+    w.metrics.Total({{ .Ctx }}, "{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}")
+{{- else }}
+    w.metrics.Total(context.Background(), "{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}")
+{{- end}}
+{{- if eq .ResultNames "" }}
+    w.wrapped.{{.MethodName}}({{ .MethodParamNames }})
+{{- else if .NamedResults }}
     {{.ResultNames }} = w.wrapped.{{.MethodName}}({{ .MethodParamNames }})
 {{- else }}
     {{.ResultNames }} := w.wrapped.{{.MethodName}}({{ .MethodParamNames }})
 {{- end}}
-    {{- if .HasError }}
+{{- if .HasError }}
     {{ $.DurationName }} := time.Since({{$.StartTimeName}})
     if err != nil {
-        w.metrics.Failure("{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}", {{ $.DurationName }}, err)
+    {{- if .HasCtx }}
+        w.metrics.Failure({{ .Ctx }}, "{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}", {{ $.DurationName }}, err)
+    {{- else }}
+        w.metrics.Failure(context.Background(), "{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}", {{ $.DurationName }}, err)
+    {{- end}}
         // TODO find a way to add default values here and return the error. for now return the same thing :)
         return {{.ResultNames }}
     }
 
     // TODO if method has no error does success matter or not?
-    w.metrics.Success("{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}", {{ $.DurationName }})
-    {{- end }}
+    {{- if .HasCtx }}
+        w.metrics.Success({{ .Ctx }}, "{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}", {{ $.DurationName }})
+    {{- else }}
+        w.metrics.Success(context.Background(), "{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}", {{ $.DurationName }})
+    {{- end}}
+{{- end }}
 
     return {{.ResultNames }}
 }
@@ -242,6 +257,8 @@ type method struct {
 	ResultNames      string
 	NamedResults     bool
 	HasError         bool
+	HasCtx           bool
+	Ctx              string
 }
 
 func (v *promWrapGenVisitor) handleInterface(intrName string, intr *ast.InterfaceType) error {
@@ -258,151 +275,24 @@ func (v *promWrapGenVisitor) handleInterface(intrName string, intr *ast.Interfac
 			return errors.New("TODO: don't want to think about this now :)")
 		}
 
-		// handle parameters
-		var (
-			paramNameAndTypes = funcParams(make([]funcParam, 0, cap(ft.Params.List)))
-			resultNames       = funcParams(make([]funcParam, 0, cap(ft.Results.List)))
-			f                 = genNameHelper(1)
-		)
-		for _, param := range ft.Params.List {
-			// get the param type
-			t := string(v.text[param.Type.Pos()-1 : param.Type.End()-1])
+		f := genNameHelper(1)
+		v.handleParams(&method, ft.Params, f)
+		v.handleResults(&method, ft.Results, f)
 
-			// if params are unnamed(i.e. func t(int, string, bool)),
-			// generate name by calling f
-			if param.Names == nil {
-				paramNameAndTypes = append(paramNameAndTypes, funcParam{
-					Name: f(),
-					Type: t,
-				})
-				continue
-			}
-
-			// if params are named, iterate over names and handle them
-			// if we encouter an underscore(_), generate a name by calling f.
-			for _, name := range param.Names {
-				if name.String() == "_" {
-					paramNameAndTypes = append(paramNameAndTypes, funcParam{
-						Name: f(),
-						Type: t,
-					})
-					continue
-				}
-
-				paramNameAndTypes = append(paramNameAndTypes, funcParam{
-					Name: name.String(),
-					Type: t,
-				})
-			}
-		}
-
-		// TODO This is the fist and simplest solution and probably need refactoring.
-		// This is for handling a case where we have underscore(_) in params. since
-		// we are calling another function we need to pass all parameters so we can't
-		// have a parameter with underscore. we will replace everything we had as parameters
-		// with the parameters we created either by generating new name or using old ones.
-		method.MethodSigFull = strings.Replace(
-			method.MethodSigFull,
-			string(v.text[ft.Params.Pos():ft.Params.End()-2]),
-			paramNameAndTypes.Join(),
-			1,
-		)
-
-		// This is used when calling the fucntion to make template simple.
-		// wrapped.F({{ .MethodParamNames }}) => i.e. wrapped.F(a, b, c, d)
-		method.MethodParamNames = paramNameAndTypes.JoinNames()
-
-		// handle results
-		for _, result := range ft.Results.List {
-			t := string(v.text[result.Type.Pos()-1 : result.Type.End()-1])
-			// TODO multipe error?
-			// Assume we only return one error for now and name it err. Also
-			// set HasError to true for template to add error handling.
-			if t == "error" {
-				method.HasError = true
-				resultNames = append(resultNames, funcParam{
-					Name: "err",
-					Type: t,
-				})
-				continue
-			}
-
-			// if we have unnamedd results (i.e. f(...) (int, string, error)),
-			// generate a name by calling f(). This is then used in getting the
-			// return value from calling wrapped function. a, b, err = wrapped.F(...)
-			if result.Names == nil {
-				resultNames = append(resultNames, funcParam{
-					Name: f(),
-					Type: t,
-				})
-				continue
-			}
-
-			// If we reach here it means we have named results so set NamedResult.
-			// Doing that will let us use = instead of := since we have no new variable
-			// in the right part of the expression.
-			method.NamedResults = true
-
-			// if results are named, iterate over names and handle them
-			// if we encouter an underscore(_), generate a name by calling f.
-			for _, name := range result.Names {
-				if name.String() == "_" {
-					resultNames = append(resultNames, funcParam{
-						Name: f(),
-						Type: t,
-					})
-					continue
-				}
-				resultNames = append(resultNames, funcParam{
-					Name: name.String(),
-					Type: t,
-				})
-			}
-		}
-
-		// this will replace old return values with normalized ones.
-		// if we have named results, replace with (name type, ...)
-		// if we have unnamed results (i.e. (string, error, ...))
-        // for other cases such as signle result without parantheses 
-        // replace sth :). TODO else might be redundant but i'm to 
-        // tierd to think about it now.
-		var (
-			nStr string
-			oStr string
-		)
-		if method.NamedResults {
-			nStr = resultNames.Join()
-			oStr = string(v.text[ft.Results.Pos() : ft.Results.End()-2])
-		} else if ft.Results.Closing.IsValid() {
-			nStr = resultNames.JoinTypes()
-			oStr = string(v.text[ft.Results.Pos() : ft.Results.End()-2])
-		} else {
-			nStr = resultNames.JoinTypes()
-			oStr = string(v.text[ft.Results.Pos()-1 : ft.Results.End()-1])
-		}
-
-		method.MethodSigFull = strings.Replace(
-			method.MethodSigFull,
-			oStr,
-			nStr,
-			1,
-		)
-
-		// This is used when getting results from the wrapped fucntion 
-        // to make template simple.
-        // {{ .ResultNames }} = wrapped.F(...) => i.e. a, b, c, d := wrapped.F(...)
-        // or
-        // {{ .ResultNames }} := wrapped.F(...) => i.e. a, b, c, d = wrapped.F(...)
-		method.ResultNames = resultNames.JoinNames()
-
-        // finally add current method to the methods slice, to use them when 
-        // populating templatess.
+		// finally add current method to the methods slice, to use them when
+		// populating templatess.
 		methods = append(methods, method)
 
 	}
 
 	// populate template
-	id := uuid.New()
+    randBytes := make([]byte, 4)
+    _, err := rand.Read(randBytes)
+    if err != nil {
+        return err
+    }
+    randStr := strings.ToUpper(hex.EncodeToString(randBytes))
+
 	vals := struct {
 		PackageName     string
 		WrapperTypeName string
@@ -415,8 +305,8 @@ func (v *promWrapGenVisitor) handleInterface(intrName string, intr *ast.Interfac
 		WrapperTypeName: intrName,
 		MethodList:      methods,
 		Imports:         v.imports,
-		StartTimeName:   fmt.Sprintf("start_%s", hex.EncodeToString(id[:4])),
-		DurationName:    fmt.Sprintf("duration_%s", hex.EncodeToString(id[4:8])),
+		StartTimeName:   fmt.Sprintf("start%s", randStr),
+		DurationName:    fmt.Sprintf("duration%s", randStr),
 	}
 
 	p := path.Join(v.cwd, strings.Split(v.filename, ".")[0]+"_promwrapgen.go")
@@ -441,6 +331,176 @@ func (v *promWrapGenVisitor) handleInterface(intrName string, intr *ast.Interfac
 	}
 
 	return nil
+}
+
+func (v *promWrapGenVisitor) handleParams(m *method, params *ast.FieldList, f func() string) funcParams {
+	var paramNames funcParams
+
+	if params == nil {
+		return paramNames
+	}
+
+	// handle parameters
+	for _, param := range params.List {
+		// get the param type
+		t := string(v.text[param.Type.Pos()-1 : param.Type.End()-1])
+		// TODO This works for now but make sure it's context.Context not any random Context
+		// if params are unnamed(i.e. func t(int, string, bool)),
+		// generate name by calling f
+		if param.Names == nil {
+			n := f()
+			if !m.HasCtx && strings.Contains(t, "Context") {
+                n = "ctx"
+				m.HasCtx = true
+				m.Ctx = n
+			}
+			paramNames = append(paramNames, funcParam{
+				Name: n,
+				Type: t,
+			})
+
+			continue
+		}
+
+		// if params are named, iterate over names and handle them
+		// if we encouter an underscore(_), generate a name by calling f.
+		for _, name := range param.Names {
+			if name.String() == "_" {
+				n := f()
+				if !m.HasCtx && strings.Contains(t, "Context") {
+                    n = "ctx"
+					m.HasCtx = true
+					m.Ctx = n
+				}
+				paramNames = append(paramNames, funcParam{
+					Name: n,
+					Type: t,
+				})
+
+				continue
+			}
+
+			paramNames = append(paramNames, funcParam{
+				Name: name.String(),
+				Type: t,
+			})
+
+			if !m.HasCtx && strings.Contains(t, "Context") {
+				m.HasCtx = true
+				m.Ctx = name.String()
+			}
+		}
+	}
+
+	// TODO This is the fist and simplest solution and probably need refactoring.
+	// This is for handling a case where we have underscore(_) in params. since
+	// we are calling another function we need to pass all parameters so we can't
+	// have a parameter with underscore. we will replace everything we had as parameters
+	// with the parameters we created either by generating new name or using old ones.
+	m.MethodSigFull = strings.Replace(
+		m.MethodSigFull,
+		string(v.text[params.Pos():params.End()-2]),
+		paramNames.Join(),
+		1,
+	)
+
+	// This is used when calling the fucntion to make template simple.
+	// wrapped.F({{ .MethodParamNames }}) => i.e. wrapped.F(a, b, c, d)
+	m.MethodParamNames = paramNames.JoinNames()
+
+	return paramNames
+}
+
+func (v *promWrapGenVisitor) handleResults(m *method, results *ast.FieldList, f func() string) funcParams {
+	var resultNames funcParams
+
+	if results == nil {
+		return resultNames
+	}
+
+	for _, result := range results.List {
+		t := string(v.text[result.Type.Pos()-1 : result.Type.End()-1])
+		// TODO multipe error?
+		// Assume we only return one error for now and name it err. Also
+		// set HasError to true for template to add error handling.
+		if t == "error" {
+			m.HasError = true
+			resultNames = append(resultNames, funcParam{
+				Name: "err",
+				Type: t,
+			})
+			continue
+		}
+
+		// if we have unnamedd results (i.e. f(...) (int, string, error)),
+		// generate a name by calling f(). This is then used in getting the
+		// return value from calling wrapped function. a, b, err = wrapped.F(...)
+		if result.Names == nil {
+			resultNames = append(resultNames, funcParam{
+				Name: f(),
+				Type: t,
+			})
+			continue
+		}
+
+		// If we reach here it means we have named results so set NamedResult.
+		// Doing that will let us use = instead of := since we have no new variable
+		// in the right part of the expression.
+		m.NamedResults = true
+
+		// if results are named, iterate over names and handle them
+		// if we encouter an underscore(_), generate a name by calling f.
+		for _, name := range result.Names {
+			if name.String() == "_" {
+				resultNames = append(resultNames, funcParam{
+					Name: f(),
+					Type: t,
+				})
+				continue
+			}
+			resultNames = append(resultNames, funcParam{
+				Name: name.String(),
+				Type: t,
+			})
+		}
+	}
+
+	// this will replace old return values with normalized ones.
+	// if we have named results, replace with (name type, ...)
+	// if we have unnamed results (i.e. (string, error, ...))
+	// for other cases such as signle result without parantheses
+	// replace sth :). TODO else might be redundant but i'm to
+	// tierd to think about it now.
+	var (
+		nStr string
+		oStr string
+	)
+	if m.NamedResults {
+		nStr = resultNames.Join()
+		oStr = string(v.text[results.Pos() : results.End()-2])
+	} else if results.Closing.IsValid() {
+		nStr = resultNames.JoinTypes()
+		oStr = string(v.text[results.Pos() : results.End()-2])
+	} else {
+		nStr = resultNames.JoinTypes()
+		oStr = string(v.text[results.Pos()-1 : results.End()-1])
+	}
+
+	m.MethodSigFull = strings.Replace(
+		m.MethodSigFull,
+		oStr,
+		nStr,
+		1,
+	)
+
+	// This is used when getting results from the wrapped fucntion
+	// to make template simple.
+	// {{ .ResultNames }} = wrapped.F(...) => i.e. a, b, c, d := wrapped.F(...)
+	// or
+	// {{ .ResultNames }} := wrapped.F(...) => i.e. a, b, c, d = wrapped.F(...)
+	m.ResultNames = resultNames.JoinNames()
+
+	return resultNames
 }
 
 func genNameHelper(count int) func() string {
