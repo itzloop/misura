@@ -32,6 +32,7 @@ package {{ .PackageName }}
 // 4. duration
 type {{$wn}} struct {
     // TODO what are fields are required
+    intr string
     wrapped {{.WrapperTypeName}}
     metrics interface{
         // Failure will be called when err != nil passing the duration and err to it
@@ -53,7 +54,16 @@ func New{{$wn}}(
         Total(ctx context.Context, pkg, intr, method string)
     },
 ) *{{$wn}} {
+    var intr string
+    splited := strings.Split(fmt.Sprintf("%T", wrapped), ".")
+    if len(splited) != 2 {
+        intr = "{{ $.WrapperTypeName }}"
+    } else {
+        intr = splited[1]
+    }
+
     return &{{$wn}}{ 
+        intr:    intr,
         wrapped: wrapped,
         metrics: metrics,
     }
@@ -70,9 +80,9 @@ func (w *{{$wn}}) {{ .MethodSigFull }} {
     {{- end }}
 
 {{- if .HasCtx }}
-    w.metrics.Total({{ .Ctx }}, "{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}")
+    w.metrics.Total({{ .Ctx }}, "{{ $.PackageName }}", w.intr, "{{ .MethodName }}")
 {{- else }}
-    w.metrics.Total(context.Background(), "{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}")
+    w.metrics.Total(context.Background(), "{{ $.PackageName }}", w.intr, "{{ .MethodName }}")
 {{- end}}
 {{- if eq .ResultNames "" }}
     w.wrapped.{{.MethodName}}({{ .MethodParamNames }})
@@ -85,9 +95,9 @@ func (w *{{$wn}}) {{ .MethodSigFull }} {
     {{ $.DurationName }} := time.Since({{$.StartTimeName}})
     if err != nil {
     {{- if .HasCtx }}
-        w.metrics.Failure({{ .Ctx }}, "{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}", {{ $.DurationName }}, err)
+        w.metrics.Failure({{ .Ctx }}, "{{ $.PackageName }}", w.intr, "{{ .MethodName }}", {{ $.DurationName }}, err)
     {{- else }}
-        w.metrics.Failure(context.Background(), "{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}", {{ $.DurationName }}, err)
+        w.metrics.Failure(context.Background(), "{{ $.PackageName }}", w.intr, "{{ .MethodName }}", {{ $.DurationName }}, err)
     {{- end}}
         // TODO find a way to add default values here and return the error. for now return the same thing :)
         return {{.ResultNames }}
@@ -95,9 +105,9 @@ func (w *{{$wn}}) {{ .MethodSigFull }} {
 
     // TODO if method has no error does success matter or not?
     {{- if .HasCtx }}
-        w.metrics.Success({{ .Ctx }}, "{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}", {{ $.DurationName }})
+        w.metrics.Success({{ .Ctx }}, "{{ $.PackageName }}", w.intr, "{{ .MethodName }}", {{ $.DurationName }})
     {{- else }}
-        w.metrics.Success(context.Background(), "{{ $.PackageName }}", "{{ $.WrapperTypeName }}", "{{ .MethodName }}", {{ $.DurationName }})
+        w.metrics.Success(context.Background(), "{{ $.PackageName }}", w.intr, "{{ .MethodName }}", {{ $.DurationName }})
     {{- end}}
 {{- end }}
 
@@ -107,6 +117,7 @@ func (w *{{$wn}}) {{ .MethodSigFull }} {
 `
 
 func main() {
+    fmt.Println(os.Args)
 	// should accept multipe targets
 	target := flag.String("t", "", "target interface(s)")
 	flag.String("m", "all", "specify with metrics to add")
@@ -119,7 +130,19 @@ func main() {
 	fmt.Printf("  cwd = %s\n", cwd)
 	fmt.Printf("  os.Args = %#v\n", os.Args)
 
-	for _, ev := range []string{"GOARCH", "GOOS", "GOFILE", "GOLINE", "GOPACKAGE", "DOLLAR"} {
+	for _, ev := range []string{
+		"GOARCH",
+		"GOOS",
+		"GOFILE",
+		"GOLINE",
+		"GOPACKAGE",
+		"DOLLAR",
+		"GOPATH",
+		"GOBIN",
+        "GOROOT",
+        "GOMOD",
+        "PATH",
+	} {
 		fmt.Println("  ", ev, "=", os.Getenv(ev))
 	}
 
@@ -286,12 +309,12 @@ func (v *promWrapGenVisitor) handleInterface(intrName string, intr *ast.Interfac
 	}
 
 	// populate template
-    randBytes := make([]byte, 4)
-    _, err := rand.Read(randBytes)
-    if err != nil {
-        return err
-    }
-    randStr := strings.ToUpper(hex.EncodeToString(randBytes))
+	randBytes := make([]byte, 4)
+	_, err := rand.Read(randBytes)
+	if err != nil {
+		return err
+	}
+	randStr := strings.ToUpper(hex.EncodeToString(randBytes))
 
 	vals := struct {
 		PackageName     string
@@ -350,7 +373,7 @@ func (v *promWrapGenVisitor) handleParams(m *method, params *ast.FieldList, f fu
 		if param.Names == nil {
 			n := f()
 			if !m.HasCtx && strings.Contains(t, "Context") {
-                n = "ctx"
+				n = "ctx"
 				m.HasCtx = true
 				m.Ctx = n
 			}
@@ -368,7 +391,7 @@ func (v *promWrapGenVisitor) handleParams(m *method, params *ast.FieldList, f fu
 			if name.String() == "_" {
 				n := f()
 				if !m.HasCtx && strings.Contains(t, "Context") {
-                    n = "ctx"
+					n = "ctx"
 					m.HasCtx = true
 					m.Ctx = n
 				}
