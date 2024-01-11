@@ -10,6 +10,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/itzloop/promwrapgen/wrapper/types"
 	"golang.org/x/tools/imports"
 )
 
@@ -43,7 +44,7 @@ type GeneratorOpts struct {
 type TemplateVals struct {
 	PackageName     string
 	WrapperTypeName string
-	MethodList      []method
+	MethodList      []types.Method
 	Imports         string
 	StartTimeName   string
 	DurationName    string
@@ -69,16 +70,16 @@ func NewWrapperGenerator(opts GeneratorOpts) (*WrapperGenerator, error) {
 		err error
 	)
 
-	if opts.Template != nil {
-		w.tmpl = opts.Template
-	} else if strings.TrimSpace(opts.TemplateStr) != "" {
-		w.tmpl, err = template.New("wrapper.gotmpl").Parse(string(opts.TemplateStr))
+	if w.opts.Template != nil {
+		w.tmpl = w.opts.Template
+	} else if strings.TrimSpace(w.opts.TemplateStr) != "" {
+		w.tmpl, err = template.New("wrapper.gotmpl").Parse(string(w.opts.TemplateStr))
 		if err != nil {
 			return nil, err
 		}
 
-	} else if strings.TrimSpace(opts.TemplatePath) != "" {
-		w.tmpl, err = template.New("wrapper.gotmpl").ParseFiles(opts.TemplatePath)
+	} else if strings.TrimSpace(w.opts.TemplatePath) != "" {
+		w.tmpl, err = template.New("wrapper.gotmpl").ParseFiles(w.opts.TemplatePath)
 		if err != nil {
 			return nil, err
 		}
@@ -86,8 +87,8 @@ func NewWrapperGenerator(opts GeneratorOpts) (*WrapperGenerator, error) {
 		return nil, errors.New("no template provided")
 	}
 
-	if strings.TrimSpace(opts.Suffix) == "" {
-		opts.Suffix = "promwrapgen"
+	if strings.TrimSpace(w.opts.Suffix) == "" {
+		w.opts.Suffix = "promwrapgen"
 	}
 
 	return &w, nil
@@ -97,7 +98,7 @@ func (w *WrapperGenerator) Generate(outPath, filename string, tmplVals TemplateV
 	var (
 		b                = &bytes.Buffer{}
 		processed        []byte
-		filenameSuffixed = fmt.Sprintf("%s.%s.go", filename, w.opts.Suffix)
+		filenameSuffixed = fmt.Sprintf("%s.%s.go", strings.Replace(filename, ".go", "", 1), w.opts.Suffix)
 		p                = path.Join(outPath, filenameSuffixed)
 	)
 
@@ -107,7 +108,9 @@ func (w *WrapperGenerator) Generate(outPath, filename string, tmplVals TemplateV
 	}
 	defer tmp.Close()
 
-	w.tmpl.Execute(b, tmplVals)
+    if err = w.tmpl.Execute(b, tmplVals); err != nil {
+        return err
+    }
 
 	if w.opts.FormatImports {
 		processed, err = imports.Process(p, b.Bytes(), nil)

@@ -1,10 +1,10 @@
 package main
 
 import (
-	"math/rand"
 	"errors"
 	"fmt"
 	"io"
+	"math/rand"
 	"net"
 	"net/http"
 	"strings"
@@ -26,9 +26,9 @@ type IPUtilImpl struct {
 }
 
 func (u *IPUtilImpl) PublicIP() (net.IP, error) {
-    if rand.Int() % 10 == 0 {
-        return nil, errors.New("intentional error")
-    }
+	if rand.Int()%10 == 0 {
+		return nil, errors.New("intentional error")
+	}
 
 	resp, err := http.Get("https://api.ipify.org/")
 	if err != nil {
@@ -46,9 +46,9 @@ func (u *IPUtilImpl) PublicIP() (net.IP, error) {
 }
 
 func (u *IPUtilImpl) LocalIPs() ([]net.IP, error) {
-    if rand.Int() % 10 == 0 {
-        return nil, errors.New("intentional error")
-    }
+	if rand.Int()%10 == 0 {
+		return nil, errors.New("intentional error")
+	}
 
 	ifaces, err := net.Interfaces()
 	if err != nil {
@@ -88,20 +88,20 @@ type Metrics struct {
 }
 
 func (m *Metrics) Total(pkg, intr, name string) {
-    fmt.Println("Total", pkg, intr, name)
+	fmt.Println("Total", pkg, intr, name)
 	m.total.Add(1)
 }
 func (m *Metrics) Error(pkg, intr, name string, d time.Duration, err error) {
-    fmt.Println("Error", pkg, intr, name)
+	fmt.Println("Error", pkg, intr, name)
 	m.errCnt.Add(1)
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-    m.errs = append(m.errs, err)
+	m.errs = append(m.errs, err)
 	m.durations = append(m.durations, d)
 }
 func (m *Metrics) Success(pkg, intr, name string, d time.Duration) {
-    fmt.Println("Success", pkg, intr, name)
+	fmt.Println("Success", pkg, intr, name)
 	m.successCnt.Add(1)
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -113,62 +113,61 @@ func (m *Metrics) String() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-    dAvg := m.durationAVG()
-    errors := m.errors()
-    f := `Summary:
+	dAvg := m.durationAVG()
+	errors := m.errors()
+	f := `Summary:
 total: %d
 errCnt: %d
 successCnt: %d
 durationAvg: %s
 errors: %s
 `
-    return fmt.Sprintf(
-        f,
-        m.total.Load(),
-        m.errCnt.Load(),
-        m.successCnt.Load(),
-        dAvg.String(),
-        errors,
-    )
-    
+	return fmt.Sprintf(
+		f,
+		m.total.Load(),
+		m.errCnt.Load(),
+		m.successCnt.Load(),
+		dAvg.String(),
+		errors,
+	)
+
 }
 
 func (m *Metrics) durationAVG() time.Duration {
-    var t time.Duration
-    for _, d := range m.durations {
-        t += d
-    }
+	var t time.Duration
+	for _, d := range m.durations {
+		t += d
+	}
 
-    return time.Duration(int(t.Nanoseconds()) / len(m.durations))
+	return time.Duration(int(t.Nanoseconds()) / len(m.durations))
 }
 
-
 func (m *Metrics) errors() string {
-    errs := errors.Join(m.errs...)
-    if errs != nil {
-        return errs.Error()
-    }
-    return ""
+	errs := errors.Join(m.errs...)
+	if errs != nil {
+		return errs.Error()
+	}
+	return ""
 }
 
 func main() {
 
-    m := &Metrics{
-    	total:      &atomic.Int64{},
-    	errCnt:     &atomic.Int64{},
-    	successCnt: &atomic.Int64{},
-    	durations:  []time.Duration{},
-    	errs:       []error{},
-    	mu:         &sync.Mutex{},
-    }
+	m := &Metrics{
+		total:      &atomic.Int64{},
+		errCnt:     &atomic.Int64{},
+		successCnt: &atomic.Int64{},
+		durations:  []time.Duration{},
+		errs:       []error{},
+		mu:         &sync.Mutex{},
+	}
 
 	uPromWrapGen := NewIPUtilPrometheusWrapperImpl(&IPUtilImpl{}, m)
 
-    for i := 0; i < 100; i++ {
-        uPromWrapGen.PublicIP()
-        uPromWrapGen.LocalIPs()
-        time.Sleep(200 * time.Millisecond)
-    }
+	for i := 0; i < 100; i++ {
+		uPromWrapGen.PublicIP()
+		uPromWrapGen.LocalIPs()
+		time.Sleep(200 * time.Millisecond)
+	}
 
-    fmt.Println(m.String())
+	fmt.Println(m.String())
 }

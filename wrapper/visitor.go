@@ -1,93 +1,64 @@
 package wrapper
 
 import (
-	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"go/ast"
+	"go/parser"
 	"go/token"
 	"os"
 	"path"
 	"strings"
 
-	"golang.org/x/tools/imports"
+	"github.com/itzloop/promwrapgen/wrapper/types"
 )
 
-type TypeVisitor struct {
-	cwd      string
-	filename string
-	text     []byte
-	fset     *token.FileSet
+type TypeVisitorOpts struct {
+	CWD      string
+	FileName string
+	Targets  types.Targets
+}
 
+type TypeVisitor struct {
+	err error
+
+	opts TypeVisitorOpts
+
+	fset        *token.FileSet
 	packageName string
 	imports     string
-	target      string
+
+	text []byte
+
+	// TODO make this interface
+	g *WrapperGenerator
 }
 
-
-type funcParam struct {
-	Name string
-	Type string
+func NewTypeVisitor(g *WrapperGenerator, opts TypeVisitorOpts) (*TypeVisitor, error) {
+	p := path.Join(opts.CWD, opts.FileName)
+	f, err := os.ReadFile(p)
+	if err != nil {
+		return nil, err
+	}
+	return &TypeVisitor{
+		g:    g,
+		text: f,
+		opts: opts,
+	}, nil
 }
 
-type funcParams []funcParam
-
-func (f funcParams) JoinNames() string {
-	str := ""
-	for i, p := range f {
-		n := p.Name
-		if strings.Contains(p.Type, "...") {
-			n += "..."
-		}
-		if i == len(f)-1 {
-			str += n
-			continue
-		}
-		str += n + ", "
+func (t *TypeVisitor) Walk() error {
+	fset := token.NewFileSet()
+	root, err := parser.ParseFile(fset, t.opts.FileName, t.text, parser.ParseComments)
+	if err != nil {
+		return err
 	}
 
-	return str
+	ast.Walk(t, root)
+	return t.err
 }
-
-func (f funcParams) JoinTypes() string {
-	str := ""
-	for i, p := range f {
-		if i == len(f)-1 {
-			str += fmt.Sprintf("%s", p.Type)
-			continue
-		}
-		str += fmt.Sprintf("%s, ", p.Type)
-	}
-
-	return str
-}
-
-func (f funcParams) Join() string {
-	str := ""
-	for i, p := range f {
-		if i == len(f)-1 {
-			str += fmt.Sprintf("%s %s", p.Name, p.Type)
-			continue
-		}
-		str += fmt.Sprintf("%s %s, ", p.Name, p.Type)
-	}
-
-	return str
-}
-
-type method struct {
-	MethodSigFull    string
-	MethodName       string
-	MethodParamNames string
-	ResultNames      string
-	NamedResults     bool
-	HasError         bool
-	HasCtx           bool
-	Ctx              string
-}
-
 
 func (t *TypeVisitor) Visit(nRaw ast.Node) ast.Visitor {
 	if nRaw == nil {
@@ -103,12 +74,19 @@ func (t *TypeVisitor) Visit(nRaw ast.Node) ast.Visitor {
 			return t
 		}
 
+		// copy all the imports from the file to the wrapper
 		t.imports = string(t.text[n.Pos()-1 : n.End()-1])
 	case *ast.TypeSpec:
 		switch x := n.Type.(type) {
 		case *ast.InterfaceType:
-			if n.Name.String() != t.target {
-				fmt.Printf("target interface is'%s' but found %s, ignoring\n", n.Name.String(), t.target)
+            // TODO support unnamed interfaces?
+            // Ignore unnamed interfaces for now
+            if n.Name.String() == "" {
+				fmt.Printf("ignoring unnamed interface\n")
+                return nil
+            }
+			if !t.opts.Targets.IsTarget(n.Name.String()) {
+				fmt.Printf("ignoring %s since it is not a target\n", n.Name.String())
 				return nil
 			}
 
@@ -120,8 +98,15 @@ func (t *TypeVisitor) Visit(nRaw ast.Node) ast.Visitor {
 			// we are done with this interface do not proceed further.
 			return nil
 		case *ast.StructType:
-			if n.Name.String() != t.target {
-				fmt.Printf("target struct is'%s' but found %s, ignoring\n", n.Name.String(), t.target)
+            // TODO support unnamed structs?
+            // Ignore unnamed structs for now
+            if n.Name.String() == "" {
+				fmt.Printf("ignoring unnamed struct\n")
+                return nil
+            }
+
+			if !t.opts.Targets.IsTarget(n.Name.String()) {
+				fmt.Printf("ignoring %s since it is not a target\n", n.Name.String())
 				return nil
 			}
 
@@ -134,9 +119,13 @@ func (t *TypeVisitor) Visit(nRaw ast.Node) ast.Visitor {
 }
 
 func (t *TypeVisitor) handleInterface(intrName string, intr *ast.InterfaceType) error {
-	methods := make([]method, 0, cap(intr.Methods.List))
+	if t.packageName == "" {
+		return errors.New("TypeVisitor: package name can't be empty")
+	}
+
+	methods := make([]types.Method, 0, cap(intr.Methods.List))
 	for _, m := range intr.Methods.List {
-		method := method{
+		method := types.Method{
 			MethodSigFull: string(t.text[m.Pos()-1 : m.End()-1]),
 			MethodName:    m.Names[0].String(),
 		}
@@ -162,40 +151,17 @@ func (t *TypeVisitor) handleInterface(intrName string, intr *ast.InterfaceType) 
 		return err
 	}
 
-	vals := TemplateVals{
+	return t.g.Generate(t.opts.CWD, t.opts.FileName, TemplateVals{
 		PackageName:     t.packageName,
 		WrapperTypeName: intrName,
 		MethodList:      methods,
 		Imports:         t.imports,
-        RandomHex: strings.ToUpper(hex.EncodeToString(randBytes)),
-	}
-
-	p := path.Join(t.cwd, strings.Split(t.filename, ".")[0]+"_promwrapgen.go")
-	tmp, err := os.Create(p)
-	if err != nil {
-		panic(err)
-	}
-	defer tmp.Close()
-
-	b := &bytes.Buffer{}
-	t.Execute(b, vals)
-
-	processed, err := imports.Process(p, b.Bytes(), nil)
-	if err != nil {
-		return err
-	}
-
-	fmt.Printf("writing to %s\n", tmp.Name())
-	_, err = tmp.Write(processed)
-	if err != nil {
-		return err
-	}
-
-	return nil
+		RandomHex:       strings.ToUpper(hex.EncodeToString(randBytes)),
+	})
 }
 
-func (t *TypeVisitor) handleParams(m *method, params *ast.FieldList, f func() string) funcParams {
-	var paramNames funcParams
+func (t *TypeVisitor) handleParams(m *types.Method, params *ast.FieldList, f func() string) types.FuncParams {
+	var paramNames types.FuncParams
 
 	if params == nil {
 		return paramNames
@@ -215,7 +181,7 @@ func (t *TypeVisitor) handleParams(m *method, params *ast.FieldList, f func() st
 				m.HasCtx = true
 				m.Ctx = n
 			}
-			paramNames = append(paramNames, funcParam{
+			paramNames = append(paramNames, types.FuncParam{
 				Name: n,
 				Type: t,
 			})
@@ -233,7 +199,7 @@ func (t *TypeVisitor) handleParams(m *method, params *ast.FieldList, f func() st
 					m.HasCtx = true
 					m.Ctx = n
 				}
-				paramNames = append(paramNames, funcParam{
+				paramNames = append(paramNames, types.FuncParam{
 					Name: n,
 					Type: t,
 				})
@@ -241,7 +207,7 @@ func (t *TypeVisitor) handleParams(m *method, params *ast.FieldList, f func() st
 				continue
 			}
 
-			paramNames = append(paramNames, funcParam{
+			paramNames = append(paramNames, types.FuncParam{
 				Name: name.String(),
 				Type: t,
 			})
@@ -272,8 +238,8 @@ func (t *TypeVisitor) handleParams(m *method, params *ast.FieldList, f func() st
 	return paramNames
 }
 
-func (t *TypeVisitor) handleResults(m *method, results *ast.FieldList, f func() string) funcParams {
-	var resultNames funcParams
+func (t *TypeVisitor) handleResults(m *types.Method, results *ast.FieldList, f func() string) types.FuncParams {
+	var resultNames types.FuncParams
 
 	if results == nil {
 		return resultNames
@@ -286,7 +252,7 @@ func (t *TypeVisitor) handleResults(m *method, results *ast.FieldList, f func() 
 		// set HasError to true for template to add error handling.
 		if t == "error" {
 			m.HasError = true
-			resultNames = append(resultNames, funcParam{
+			resultNames = append(resultNames, types.FuncParam{
 				Name: "err",
 				Type: t,
 			})
@@ -297,7 +263,7 @@ func (t *TypeVisitor) handleResults(m *method, results *ast.FieldList, f func() 
 		// generate a name by calling f(). This is then used in getting the
 		// return value from calling wrapped function. a, b, err = wrapped.F(...)
 		if result.Names == nil {
-			resultNames = append(resultNames, funcParam{
+			resultNames = append(resultNames, types.FuncParam{
 				Name: f(),
 				Type: t,
 			})
@@ -313,13 +279,13 @@ func (t *TypeVisitor) handleResults(m *method, results *ast.FieldList, f func() 
 		// if we encouter an underscore(_), generate a name by calling f.
 		for _, name := range result.Names {
 			if name.String() == "_" {
-				resultNames = append(resultNames, funcParam{
+				resultNames = append(resultNames, types.FuncParam{
 					Name: f(),
 					Type: t,
 				})
 				continue
 			}
-			resultNames = append(resultNames, funcParam{
+			resultNames = append(resultNames, types.FuncParam{
 				Name: name.String(),
 				Type: t,
 			})
