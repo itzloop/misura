@@ -1,87 +1,21 @@
-package main
+package wrapper
 
 import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"flag"
 	"fmt"
 	"go/ast"
-	"go/parser"
 	"go/token"
-	"log"
 	"os"
 	"path"
 	"strings"
-	"text/template"
 
 	"golang.org/x/tools/imports"
-
-    _ "embed"
 )
 
-//go:embed templates/wrapper.gotmpl
-var wrapperDecl string
-
-func main() {
-    fmt.Println(os.Args)
-	// should accept multipe targets
-	target := flag.String("t", "", "target interface(s)")
-	flag.String("m", "all", "specify with metrics to add")
-	flag.Parse()
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		panic(err)
-	}
-	fmt.Printf("  cwd = %s\n", cwd)
-	fmt.Printf("  os.Args = %#v\n", os.Args)
-
-	for _, ev := range []string{
-		"GOARCH",
-		"GOOS",
-		"GOFILE",
-		"GOLINE",
-		"GOPACKAGE",
-		"DOLLAR",
-		"GOPATH",
-		"GOBIN",
-        "GOROOT",
-        "GOMOD",
-        "PATH",
-	} {
-		fmt.Println("  ", ev, "=", os.Getenv(ev))
-	}
-
-	filePath := path.Join(cwd, os.Getenv("GOFILE"))
-
-	log.Printf("generating prometheus wrapper for '%s'\n", filePath)
-
-	// read file
-	file, err := os.ReadFile(filePath)
-	if err != nil {
-		panic(err)
-	}
-
-	fset := token.NewFileSet()
-	root, err := parser.ParseFile(fset, filePath, file, parser.ParseComments)
-	if err != nil {
-		log.Fatalln(err)
-	}
-
-	visitor := promWrapGenVisitor{
-		filename: os.Getenv("GOFILE"),
-		cwd:      cwd,
-		fset:     fset,
-		text:     file,
-		target:   *target,
-	}
-
-	ast.Walk(&visitor, root)
-}
-
-type promWrapGenVisitor struct {
+type TypeVisitor struct {
 	cwd      string
 	filename string
 	text     []byte
@@ -92,44 +26,6 @@ type promWrapGenVisitor struct {
 	target      string
 }
 
-func (v *promWrapGenVisitor) Visit(nRaw ast.Node) ast.Visitor {
-	if nRaw == nil {
-		return nil
-	}
-
-	switch n := nRaw.(type) {
-	case *ast.File:
-		v.packageName = n.Name.String()
-	case *ast.GenDecl:
-		// we only care about import statements
-		if n.Tok.String() != "import" {
-			return v
-		}
-
-		v.imports = string(v.text[n.Pos()-1 : n.End()-1])
-	case *ast.TypeSpec:
-		switch x := n.Type.(type) {
-		case *ast.InterfaceType:
-			if n.Name.String() != v.target {
-				fmt.Printf("target interface is'%s' but found %s, ignoring\n", n.Name.String(), v.target)
-				return nil
-			}
-
-			err := v.handleInterface(n.Name.String(), x)
-			if err != nil {
-				panic(err)
-			}
-
-			// we are done with this interface do not proceed further.
-			return nil
-		case *ast.StructType:
-			fmt.Println("struct type not implemented")
-			return nil
-		}
-	}
-
-	return v
-}
 
 type funcParam struct {
 	Name string
@@ -192,13 +88,56 @@ type method struct {
 	Ctx              string
 }
 
-func (v *promWrapGenVisitor) handleInterface(intrName string, intr *ast.InterfaceType) error {
-	t := template.Must(template.New("promwrapgen").Parse(wrapperDecl))
 
+func (t *TypeVisitor) Visit(nRaw ast.Node) ast.Visitor {
+	if nRaw == nil {
+		return nil
+	}
+
+	switch n := nRaw.(type) {
+	case *ast.File:
+		t.packageName = n.Name.String()
+	case *ast.GenDecl:
+		// we only care about import statements
+		if n.Tok.String() != "import" {
+			return t
+		}
+
+		t.imports = string(t.text[n.Pos()-1 : n.End()-1])
+	case *ast.TypeSpec:
+		switch x := n.Type.(type) {
+		case *ast.InterfaceType:
+			if n.Name.String() != t.target {
+				fmt.Printf("target interface is'%s' but found %s, ignoring\n", n.Name.String(), t.target)
+				return nil
+			}
+
+			err := t.handleInterface(n.Name.String(), x)
+			if err != nil {
+				panic(err)
+			}
+
+			// we are done with this interface do not proceed further.
+			return nil
+		case *ast.StructType:
+			if n.Name.String() != t.target {
+				fmt.Printf("target struct is'%s' but found %s, ignoring\n", n.Name.String(), t.target)
+				return nil
+			}
+
+			fmt.Println("struct type not implemented")
+			return nil
+		}
+	}
+
+	return t
+}
+
+func (t *TypeVisitor) handleInterface(intrName string, intr *ast.InterfaceType) error {
 	methods := make([]method, 0, cap(intr.Methods.List))
 	for _, m := range intr.Methods.List {
 		method := method{
-			MethodSigFull: string(v.text[m.Pos()-1 : m.End()-1]),
+			MethodSigFull: string(t.text[m.Pos()-1 : m.End()-1]),
 			MethodName:    m.Names[0].String(),
 		}
 		ft, ok := m.Type.(*ast.FuncType)
@@ -207,8 +146,8 @@ func (v *promWrapGenVisitor) handleInterface(intrName string, intr *ast.Interfac
 		}
 
 		f := genNameHelper(1)
-		v.handleParams(&method, ft.Params, f)
-		v.handleResults(&method, ft.Results, f)
+		t.handleParams(&method, ft.Params, f)
+		t.handleResults(&method, ft.Results, f)
 
 		// finally add current method to the methods slice, to use them when
 		// populating templatess.
@@ -222,25 +161,16 @@ func (v *promWrapGenVisitor) handleInterface(intrName string, intr *ast.Interfac
 	if err != nil {
 		return err
 	}
-	randStr := strings.ToUpper(hex.EncodeToString(randBytes))
 
-	vals := struct {
-		PackageName     string
-		WrapperTypeName string
-		MethodList      []method
-		Imports         string
-		StartTimeName   string
-		DurationName    string
-	}{
-		PackageName:     v.packageName,
+	vals := TemplateVals{
+		PackageName:     t.packageName,
 		WrapperTypeName: intrName,
 		MethodList:      methods,
-		Imports:         v.imports,
-		StartTimeName:   fmt.Sprintf("start%s", randStr),
-		DurationName:    fmt.Sprintf("duration%s", randStr),
+		Imports:         t.imports,
+        RandomHex: strings.ToUpper(hex.EncodeToString(randBytes)),
 	}
 
-	p := path.Join(v.cwd, strings.Split(v.filename, ".")[0]+"_promwrapgen.go")
+	p := path.Join(t.cwd, strings.Split(t.filename, ".")[0]+"_promwrapgen.go")
 	tmp, err := os.Create(p)
 	if err != nil {
 		panic(err)
@@ -264,7 +194,7 @@ func (v *promWrapGenVisitor) handleInterface(intrName string, intr *ast.Interfac
 	return nil
 }
 
-func (v *promWrapGenVisitor) handleParams(m *method, params *ast.FieldList, f func() string) funcParams {
+func (t *TypeVisitor) handleParams(m *method, params *ast.FieldList, f func() string) funcParams {
 	var paramNames funcParams
 
 	if params == nil {
@@ -274,7 +204,7 @@ func (v *promWrapGenVisitor) handleParams(m *method, params *ast.FieldList, f fu
 	// handle parameters
 	for _, param := range params.List {
 		// get the param type
-		t := string(v.text[param.Type.Pos()-1 : param.Type.End()-1])
+		t := string(t.text[param.Type.Pos()-1 : param.Type.End()-1])
 		// TODO This works for now but make sure it's context.Context not any random Context
 		// if params are unnamed(i.e. func t(int, string, bool)),
 		// generate name by calling f
@@ -330,7 +260,7 @@ func (v *promWrapGenVisitor) handleParams(m *method, params *ast.FieldList, f fu
 	// with the parameters we created either by generating new name or using old ones.
 	m.MethodSigFull = strings.Replace(
 		m.MethodSigFull,
-		string(v.text[params.Pos():params.End()-2]),
+		string(t.text[params.Pos():params.End()-2]),
 		paramNames.Join(),
 		1,
 	)
@@ -342,7 +272,7 @@ func (v *promWrapGenVisitor) handleParams(m *method, params *ast.FieldList, f fu
 	return paramNames
 }
 
-func (v *promWrapGenVisitor) handleResults(m *method, results *ast.FieldList, f func() string) funcParams {
+func (t *TypeVisitor) handleResults(m *method, results *ast.FieldList, f func() string) funcParams {
 	var resultNames funcParams
 
 	if results == nil {
@@ -350,7 +280,7 @@ func (v *promWrapGenVisitor) handleResults(m *method, results *ast.FieldList, f 
 	}
 
 	for _, result := range results.List {
-		t := string(v.text[result.Type.Pos()-1 : result.Type.End()-1])
+		t := string(t.text[result.Type.Pos()-1 : result.Type.End()-1])
 		// TODO multipe error?
 		// Assume we only return one error for now and name it err. Also
 		// set HasError to true for template to add error handling.
@@ -408,13 +338,13 @@ func (v *promWrapGenVisitor) handleResults(m *method, results *ast.FieldList, f 
 	)
 	if m.NamedResults {
 		nStr = resultNames.Join()
-		oStr = string(v.text[results.Pos() : results.End()-2])
+		oStr = string(t.text[results.Pos() : results.End()-2])
 	} else if results.Closing.IsValid() {
 		nStr = resultNames.JoinTypes()
-		oStr = string(v.text[results.Pos() : results.End()-2])
+		oStr = string(t.text[results.Pos() : results.End()-2])
 	} else {
 		nStr = resultNames.JoinTypes()
-		oStr = string(v.text[results.Pos()-1 : results.End()-1])
+		oStr = string(t.text[results.Pos()-1 : results.End()-1])
 	}
 
 	m.MethodSigFull = strings.Replace(
@@ -432,27 +362,4 @@ func (v *promWrapGenVisitor) handleResults(m *method, results *ast.FieldList, f 
 	m.ResultNames = resultNames.JoinNames()
 
 	return resultNames
-}
-
-func genNameHelper(count int) func() string {
-	start := -1
-	if count < 1 {
-		count = 1
-	}
-
-	alphabet := "abcdefghijklmnopqrstuvwxyz"
-
-	return func() string {
-		start++
-		if start == len(alphabet) {
-			start = 0
-			count++
-		}
-
-		if start+count <= len(alphabet) {
-			return string([]byte(alphabet)[start : start+count])
-		}
-
-		return string([]byte(alphabet)[start:start+count]) + string([]byte(alphabet)[0:start+count-len(alphabet)])
-	}
 }
