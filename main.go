@@ -6,50 +6,50 @@ import (
 	"log"
 	"os"
 	"path"
+	"strings"
+	"text/template"
 
 	"github.com/itzloop/promwrapgen/wrapper"
 
-	_ "embed"
+	"embed"
 )
 
-//go:embed templates/wrapper.gotmpl
-var tmpl string
+//go:embed templates/*.gotmpl
+var f embed.FS
 
 func main() {
-	fmt.Println(os.Args)
+	fmt.Printf("running command: %s\n", strings.Join(os.Args, " "))
+
 	// should accept multipe targets
-	target := flag.String("t", "", "target interface(s)")
-	flag.String("m", "all", "specify with metrics to add")
+	targetsFlag := flag.String("t", "", "comma seperated target interface(s)")
+	metricsflag := flag.String("m", "all", `comma seperated list of metrics to include. 
+possible values [all, duration, total, success, error].
+If all is specified others will be ignored`)
+	formatImports := flag.Bool("fmt", true, "if set to true, will run imports.Process on the generated wrapper")
 	flag.Parse()
+
+	targetsCS := strings.Split(*targetsFlag, ",")
+	if len(targetsCS) == 0 {
+		log.Fatalln("at least one target is needed")
+	}
+
+	metricsCS := strings.Split(*metricsflag, ",")
+	if len(metricsCS) == 0 {
+		metricsCS = append(metricsCS, "all")
+	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("  cwd = %s\n", cwd)
-	fmt.Printf("  os.Args = %#v\n", os.Args)
-
-	for _, ev := range []string{
-		"GOARCH",
-		"GOOS",
-		"GOFILE",
-		"GOLINE",
-		"GOPACKAGE",
-		"DOLLAR",
-		"GOPATH",
-		"GOBIN",
-		"GOROOT",
-		"GOMOD",
-	} {
-		fmt.Println("  ", ev, "=", os.Getenv(ev))
-	}
 
 	filePath := path.Join(cwd, os.Getenv("GOFILE"))
-	log.Printf("generating prometheus wrapper for '%s'\n", filePath)
+	fmt.Printf("generating prometheus wrapper for '%s'\n", filePath)
 
 	generator, err := wrapper.NewWrapperGenerator(wrapper.GeneratorOpts{
-		FormatImports: true,
-		TemplateStr:   tmpl,
+		Metrics:       metricsCS,
+		FormatImports: *formatImports,
+		Template:      templates(),
 	})
 	if err != nil {
 		log.Fatalf("failed to create WrapperGenerator: %v\n", err)
@@ -58,7 +58,7 @@ func main() {
 	visitor, err := wrapper.NewTypeVisitor(generator, wrapper.TypeVisitorOpts{
 		CWD:      cwd,
 		FileName: os.Getenv("GOFILE"),
-		Targets:  []string{*target},
+		Targets:  targetsCS,
 	})
 	if err != nil {
 		log.Fatalf("failed to create TypeVisitor: %v\n", err)
@@ -68,4 +68,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to walk over ast: %v\n", err)
 	}
+}
+
+func templates() *template.Template {
+	tmpl := template.New("wrapper")
+	return template.Must(tmpl.ParseFS(f, "templates/*.gotmpl"))
 }

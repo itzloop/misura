@@ -18,7 +18,7 @@ import (
 type TypeVisitorOpts struct {
 	CWD      string
 	FileName string
-	Targets  types.Targets
+	Targets  types.Strings
 }
 
 type TypeVisitor struct {
@@ -79,13 +79,13 @@ func (t *TypeVisitor) Visit(nRaw ast.Node) ast.Visitor {
 	case *ast.TypeSpec:
 		switch x := n.Type.(type) {
 		case *ast.InterfaceType:
-            // TODO support unnamed interfaces?
-            // Ignore unnamed interfaces for now
-            if n.Name.String() == "" {
+			// TODO support unnamed interfaces?
+			// Ignore unnamed interfaces for now
+			if n.Name.String() == "" {
 				fmt.Printf("ignoring unnamed interface\n")
-                return nil
-            }
-			if !t.opts.Targets.IsTarget(n.Name.String()) {
+				return nil
+			}
+			if !t.opts.Targets.Exists(n.Name.String()) {
 				fmt.Printf("ignoring %s since it is not a target\n", n.Name.String())
 				return nil
 			}
@@ -98,14 +98,14 @@ func (t *TypeVisitor) Visit(nRaw ast.Node) ast.Visitor {
 			// we are done with this interface do not proceed further.
 			return nil
 		case *ast.StructType:
-            // TODO support unnamed structs?
-            // Ignore unnamed structs for now
-            if n.Name.String() == "" {
+			// TODO support unnamed structs?
+			// Ignore unnamed structs for now
+			if n.Name.String() == "" {
 				fmt.Printf("ignoring unnamed struct\n")
-                return nil
-            }
+				return nil
+			}
 
-			if !t.opts.Targets.IsTarget(n.Name.String()) {
+			if !t.opts.Targets.Exists(n.Name.String()) {
 				fmt.Printf("ignoring %s since it is not a target\n", n.Name.String())
 				return nil
 			}

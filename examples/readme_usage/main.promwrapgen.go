@@ -25,10 +25,8 @@ type IPUtilPrometheusWrapperImpl struct {
 	metrics interface {
 		// Failure will be called when err != nil passing the duration and err to it
 		Failure(ctx context.Context, pkg, intr, method string, duration time.Duration, err error)
-
-		// Success will be called if err == nil passing the duration to it
+		// Success will be called if err == nil passing the duration
 		Success(ctx context.Context, pkg, intr, method string, duration time.Duration)
-
 		// Total will be called as soon as the function is called.
 		Total(ctx context.Context, pkg, intr, method string)
 	}
@@ -37,8 +35,11 @@ type IPUtilPrometheusWrapperImpl struct {
 func NewIPUtilPrometheusWrapperImpl(
 	wrapped IPUtil,
 	metrics interface {
+		// Failure will be called when err != nil passing the duration and err to it
 		Failure(ctx context.Context, pkg, intr, method string, duration time.Duration, err error)
+		// Success will be called if err == nil passing the duration
 		Success(ctx context.Context, pkg, intr, method string, duration time.Duration)
+		// Total will be called as soon as the function is called.
 		Total(ctx context.Context, pkg, intr, method string)
 	},
 ) *IPUtilPrometheusWrapperImpl {
@@ -71,8 +72,6 @@ func (w *IPUtilPrometheusWrapperImpl) PublicIP() (net.IP, error) {
 		// TODO find a way to add default values here and return the error. for now return the same thing :)
 		return a, err
 	}
-
-	// TODO if method has no error does success matter or not?
 	w.metrics.Success(context.Background(), "main", w.intr, "PublicIP", duration08FFBB12)
 
 	return a, err
@@ -92,8 +91,6 @@ func (w *IPUtilPrometheusWrapperImpl) LocalIPs() ([]net.IP, error) {
 		// TODO find a way to add default values here and return the error. for now return the same thing :)
 		return a, err
 	}
-
-	// TODO if method has no error does success matter or not?
 	w.metrics.Success(context.Background(), "main", w.intr, "LocalIPs", duration08FFBB12)
 
 	return a, err

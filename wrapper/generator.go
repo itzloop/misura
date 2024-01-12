@@ -1,6 +1,7 @@
 package wrapper
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
@@ -39,6 +40,16 @@ type GeneratorOpts struct {
 	// Suffix will be used to name the generated wrapper.
 	// GOFILE.Suffix.go. By default promwrapgen will be used.j
 	Suffix string
+
+	// Metrics will be used to decided what metrics to include.
+	// Possible values are:
+	// 1. duration
+	// 2. total
+	// 3. error
+	// 4. success
+	// 5. all
+	// If all is specified then others will be ignored.
+	Metrics types.Strings
 }
 
 type TemplateVals struct {
@@ -49,6 +60,12 @@ type TemplateVals struct {
 	StartTimeName   string
 	DurationName    string
 	RandomHex       string
+
+	// metrics
+	HasDuration bool
+	HasTotal    bool
+	HasError    bool
+	HasSuccess  bool
 }
 
 type WrapperGenerator struct {
@@ -100,17 +117,41 @@ func (w *WrapperGenerator) Generate(outPath, filename string, tmplVals TemplateV
 		processed        []byte
 		filenameSuffixed = fmt.Sprintf("%s.%s.go", strings.Replace(filename, ".go", "", 1), w.opts.Suffix)
 		p                = path.Join(outPath, filenameSuffixed)
+		err              error
 	)
 
-	tmp, err := os.Create(p)
-	if err != nil {
-		panic(err)
-	}
-	defer tmp.Close()
+	fmt.Println(w.opts.Metrics)
+	if len(w.opts.Metrics) == 0 || w.opts.Metrics.Exists("all") {
+		tmplVals.HasDuration = true
+		tmplVals.HasTotal = true
+		tmplVals.HasError = true
+		tmplVals.HasSuccess = true
+	} else {
+		if w.opts.Metrics.Exists("duration") {
+			tmplVals.HasDuration = true
+		}
 
-    if err = w.tmpl.Execute(b, tmplVals); err != nil {
-        return err
-    }
+		if w.opts.Metrics.Exists("total") {
+			tmplVals.HasTotal = true
+		}
+
+		if w.opts.Metrics.Exists("error") {
+			tmplVals.HasError = true
+		}
+
+		if w.opts.Metrics.Exists("success") {
+			tmplVals.HasSuccess = true
+		}
+	}
+
+	tmplVals.RandomHex, err = getRandomHex(p, tmplVals.RandomHex)
+	if err != nil {
+		return err
+	}
+
+	if err = w.tmpl.ExecuteTemplate(b, "wrapper.gotmpl", tmplVals); err != nil {
+		return err
+	}
 
 	if w.opts.FormatImports {
 		processed, err = imports.Process(p, b.Bytes(), nil)
@@ -121,11 +162,36 @@ func (w *WrapperGenerator) Generate(outPath, filename string, tmplVals TemplateV
 		processed = b.Bytes()
 	}
 
-	fmt.Printf("writing to %s\n", tmp.Name())
-	_, err = tmp.Write(processed)
+	f, err := os.Create(p)
+	if err != nil {
+		return err
+	}
+
+	fmt.Printf("writing to %s\n", f.Name())
+	_, err = f.Write(processed)
 	if err != nil {
 		return err
 	}
 
 	return nil
+}
+
+func getRandomHex(p, randomHex string) (string, error) {
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_RDWR, 0644)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	sc := bufio.NewScanner(f)
+
+	if sc.Scan() && sc.Scan() {
+		newRandomHex := strings.Replace(sc.Text(), "// RANDOM_HEX=", "", 1)
+		if strings.TrimSpace(newRandomHex) != "" {
+			fmt.Printf("reusing random hex: %s\n", newRandomHex)
+			return newRandomHex, nil
+		}
+	}
+
+	return randomHex, nil
 }

@@ -1,8 +1,8 @@
 package types
 
-type Targets []string
+type Strings []string
 
-func (ts Targets) IsTarget(target string) bool {
+func (ts Strings) Exists(target string) bool {
 	for _, t := range ts {
 		if t == target {
 			return true
