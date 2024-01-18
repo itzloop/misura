@@ -9,16 +9,15 @@ THIS IS A WIP
 
 - [x] Handle slice ... operator
 - [x] Only work on targets passed not all interfaces in file
-- [ ] Pass method name and other method related information Total, Success and Error
-- [ ] Get list of targets not just one
-- [ ] Let users decided what metrics they want
+- [x] Pass method name and other method related information Total, Success and Error
+- [x] Get list of targets not just one
+    - [ ] Check generated file exists, if yes append to it.
+- [x] Let users decided what metrics they want
 - [ ] Handle `time` package conflict
-- [ ] Some logic is stupid and slow but finish it first for prometheus metric only on interfaces and then refactor.
 - [ ] Add struct wrapping support?? What if struct methods are in multiple files???
-- [ ] Extract wrapping funtionality.
 - [ ] Enable users to extend wrapping functionallity to add custom logic to their interfaces
 - [ ] Custom metrics?
-- [ ] Refactor and make it more clever.
+- [ ] Per type method inclusion and exlusion
 
 ## Usage
 
@@ -28,7 +27,8 @@ THIS IS A WIP
 
 ## Testing
 
-TODO
+- [ ] Test generated wrappers for compliation
+- [ ] Test generated code is as expected using `ast`.
 
 ## 
 

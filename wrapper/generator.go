@@ -153,13 +153,9 @@ func (w *WrapperGenerator) Generate(outPath, filename string, tmplVals TemplateV
 		return err
 	}
 
-	if w.opts.FormatImports {
-		processed, err = imports.Process(p, b.Bytes(), nil)
-		if err != nil {
-			return err
-		}
-	} else {
-		processed = b.Bytes()
+	processed, err = formatImports(p, b, w.opts.FormatImports)
+	if err != nil {
+		return err
 	}
 
 	f, err := os.Create(p)
@@ -174,6 +170,20 @@ func (w *WrapperGenerator) Generate(outPath, filename string, tmplVals TemplateV
 	}
 
 	return nil
+}
+
+func formatImports(filename string, b *bytes.Buffer, format bool) ([]byte, error) {
+	if format {
+		processed, err := imports.Process(filename, b.Bytes(), nil)
+		if err != nil {
+			return nil, err
+		}
+
+		return processed, nil
+	}
+
+	return b.Bytes(), nil
+
 }
 
 func getRandomHex(p, randomHex string) (string, error) {
