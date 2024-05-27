@@ -1,16 +1,16 @@
 metrics interface{
     {{- if .HasError }}
         // Failure will be called when err != nil passing the {{ if .HasDuration }}duration and {{ end }}err to it 
-        Failure(ctx context.Context, pkg, intr, method string,{{ if .HasDuration }} duration time.Duration,{{ end }} err error)
+        Failure(ctx context.Context, name, pkg, intr, method string,{{ if .HasDuration }} duration time.Duration,{{ end }} err error)
     {{- end }}
 
     {{- if .HasSuccess }}
         // Success will be called if err == nil {{ if .HasDuration }}passing the duration{{ end }}
-        Success(ctx context.Context, pkg, intr, method string, {{ if .HasDuration }} duration time.Duration,{{ end }})
+        Success(ctx context.Context, name, pkg, intr, method string, {{ if .HasDuration }} duration time.Duration,{{ end }})
     {{- end }}
 
     {{- if .HasTotal }}
         // Total will be called as soon as the function is called.
-        Total(ctx context.Context, pkg, intr, method string)
+        Total(ctx context.Context, name, pkg, intr, method string)
     {{- end }}
 }
