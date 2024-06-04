@@ -68,7 +68,7 @@ type IPUtil interface {
 
 ## Testing
 
-```golang
+```bash
 go test ./...
 ```
 
