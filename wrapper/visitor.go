@@ -151,7 +151,15 @@ func (t *TypeVisitor) handleInterface(intrName string, intr *ast.InterfaceType) 
 		return err
 	}
 
-	return t.g.Generate(t.opts.CWD, t.opts.FileName, TemplateVals{
+    // if we have mulitple targets in the same file,
+    // split them in seperate files by including the
+    // target in the generated file name
+    filename := t.opts.FileName
+    if len(t.opts.Targets) > 1 {
+        filename = filename + "." + intrName
+    }
+
+	return t.g.Generate(t.opts.CWD, filename, TemplateVals{
 		PackageName:     t.packageName,
 		WrapperTypeName: intrName,
 		MethodList:      methods,

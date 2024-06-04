@@ -20,27 +20,29 @@ import (
 // 4. duration
 type IPUtilPrometheusWrapperImpl struct {
 	// TODO what are fields are required
+	name    string
 	intr    string
 	wrapped IPUtil
 	metrics interface {
 		// Failure will be called when err != nil passing the duration and err to it
-		Failure(ctx context.Context, pkg, intr, method string, duration time.Duration, err error)
+		Failure(ctx context.Context, name, pkg, intr, method string, duration time.Duration, err error)
 		// Success will be called if err == nil passing the duration
-		Success(ctx context.Context, pkg, intr, method string, duration time.Duration)
+		Success(ctx context.Context, name, pkg, intr, method string, duration time.Duration)
 		// Total will be called as soon as the function is called.
-		Total(ctx context.Context, pkg, intr, method string)
+		Total(ctx context.Context, name, pkg, intr, method string)
 	}
 }
 
 func NewIPUtilPrometheusWrapperImpl(
+	name string,
 	wrapped IPUtil,
 	metrics interface {
 		// Failure will be called when err != nil passing the duration and err to it
-		Failure(ctx context.Context, pkg, intr, method string, duration time.Duration, err error)
+		Failure(ctx context.Context, name, pkg, intr, method string, duration time.Duration, err error)
 		// Success will be called if err == nil passing the duration
-		Success(ctx context.Context, pkg, intr, method string, duration time.Duration)
+		Success(ctx context.Context, name, pkg, intr, method string, duration time.Duration)
 		// Total will be called as soon as the function is called.
-		Total(ctx context.Context, pkg, intr, method string)
+		Total(ctx context.Context, name, pkg, intr, method string)
 	},
 ) *IPUtilPrometheusWrapperImpl {
 	var intr string
@@ -52,6 +54,7 @@ func NewIPUtilPrometheusWrapperImpl(
 	}
 
 	return &IPUtilPrometheusWrapperImpl{
+		name:    name,
 		intr:    intr,
 		wrapped: wrapped,
 		metrics: metrics,
@@ -64,15 +67,15 @@ func NewIPUtilPrometheusWrapperImpl(
 func (w *IPUtilPrometheusWrapperImpl) PublicIP() (net.IP, error) {
 	// TODO time package conflicts
 	start08FFBB12 := time.Now()
-	w.metrics.Total(context.Background(), "main", w.intr, "PublicIP")
+	w.metrics.Total(context.Background(), w.name, "main", w.intr, "PublicIP")
 	a, err := w.wrapped.PublicIP()
 	duration08FFBB12 := time.Since(start08FFBB12)
 	if err != nil {
-		w.metrics.Failure(context.Background(), "main", w.intr, "PublicIP", duration08FFBB12, err)
+		w.metrics.Failure(context.Background(), w.name, "main", w.intr, "PublicIP", duration08FFBB12, err)
 		// TODO find a way to add default values here and return the error. for now return the same thing :)
 		return a, err
 	}
-	w.metrics.Success(context.Background(), "main", w.intr, "PublicIP", duration08FFBB12)
+	w.metrics.Success(context.Background(), w.name, "main", w.intr, "PublicIP", duration08FFBB12)
 
 	return a, err
 }
@@ -83,15 +86,15 @@ func (w *IPUtilPrometheusWrapperImpl) PublicIP() (net.IP, error) {
 func (w *IPUtilPrometheusWrapperImpl) LocalIPs() ([]net.IP, error) {
 	// TODO time package conflicts
 	start08FFBB12 := time.Now()
-	w.metrics.Total(context.Background(), "main", w.intr, "LocalIPs")
+	w.metrics.Total(context.Background(), w.name, "main", w.intr, "LocalIPs")
 	a, err := w.wrapped.LocalIPs()
 	duration08FFBB12 := time.Since(start08FFBB12)
 	if err != nil {
-		w.metrics.Failure(context.Background(), "main", w.intr, "LocalIPs", duration08FFBB12, err)
+		w.metrics.Failure(context.Background(), w.name, "main", w.intr, "LocalIPs", duration08FFBB12, err)
 		// TODO find a way to add default values here and return the error. for now return the same thing :)
 		return a, err
 	}
-	w.metrics.Success(context.Background(), "main", w.intr, "LocalIPs", duration08FFBB12)
+	w.metrics.Success(context.Background(), w.name, "main", w.intr, "LocalIPs", duration08FFBB12)
 
 	return a, err
 }

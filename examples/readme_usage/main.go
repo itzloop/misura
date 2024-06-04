@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -87,12 +88,12 @@ type Metrics struct {
 	mu         *sync.Mutex
 }
 
-func (m *Metrics) Total(pkg, intr, name string) {
+func (m *Metrics) Total(_ context.Context, name, pkg, intr, method string) {
 	fmt.Println("Total", pkg, intr, name)
 	m.total.Add(1)
 }
-func (m *Metrics) Error(pkg, intr, name string, d time.Duration, err error) {
-	fmt.Println("Error", pkg, intr, name)
+func (m *Metrics) Failure(_ context.Context, name, pkg, intr, method string, d time.Duration, err error) {
+	fmt.Println("Failure", pkg, intr, method)
 	m.errCnt.Add(1)
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -100,8 +101,8 @@ func (m *Metrics) Error(pkg, intr, name string, d time.Duration, err error) {
 	m.errs = append(m.errs, err)
 	m.durations = append(m.durations, d)
 }
-func (m *Metrics) Success(pkg, intr, name string, d time.Duration) {
-	fmt.Println("Success", pkg, intr, name)
+func (m *Metrics) Success(_ context.Context, name, pkg, intr, method string, d time.Duration) {
+	fmt.Println("Success", pkg, intr, method)
 	m.successCnt.Add(1)
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -161,7 +162,7 @@ func main() {
 		mu:         &sync.Mutex{},
 	}
 
-	uPromWrapGen := NewIPUtilPrometheusWrapperImpl(&IPUtilImpl{}, m)
+	uPromWrapGen := NewIPUtilPrometheusWrapperImpl("iputil", &IPUtilImpl{}, m)
 
 	for i := 0; i < 100; i++ {
 		uPromWrapGen.PublicIP()

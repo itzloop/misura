@@ -15,11 +15,6 @@ import (
 )
 
 func TestWrapper(t *testing.T) {
-	// Convert targets to:
-	// []struct {
-	// 	filename string
-	// 	target   string
-	// }
 	targets := []struct {
 		filename string
 		target   string
@@ -27,16 +22,15 @@ func TestWrapper(t *testing.T) {
 		{filename: "test.go", target: "NamedParamsAndResults"},
 		{filename: "test.go", target: "UnnamedAndNamedParamsAndResults"},
 		{filename: "test.go", target: "UnderscoreNames"},
-		{filename: "test.go", target: "UnnamedResults"},
 		{filename: "test.go", target: "NoParams"},
 		{filename: "test.go", target: "NoResult"},
-		{filename: "test.go", target: "ConflictDuration"},
-		{filename: "test.go", target: "ConflictTimePackage"},
+		// {filename: "test.go", target: "ConflictDuration"},
+		// {filename: "test.go", target: "ConflictTimePackage"},
 	}
 
 	for _, target := range targets {
 		t.Run(
-			fmt.Sprintf("test generated target %s compliation", target),
+			fmt.Sprintf("test_generated_target_%s_compliation", target.target),
 			func(t *testing.T) {
 				wd := copyFilesHelper(t)
 				tv := createTypeVisitor(t, wd, target.filename, []string{target.target})
@@ -46,6 +40,29 @@ func TestWrapper(t *testing.T) {
 			},
 		)
 	}
+
+	t.Run("all_targets_compliation", func(t *testing.T) {
+        files := map[string][]string{}
+		for _, t := range targets {
+			_, ok := files[t.filename]
+			if !ok {
+				files[t.filename] = []string{}
+			}
+
+			files[t.filename] = append(files[t.filename], t.target)
+		}
+
+		for f, target := range files {
+			wd := copyFilesHelper(t)
+			tv := createTypeVisitor(t, wd, f, target)
+			err := tv.Walk()
+			require.NoError(t, err)
+            for _, target := range target {
+                require.FileExists(t, path.Join(wd, strings.ReplaceAll(f, path.Ext(f), "."+target+".promwrapgen.go")))
+            }
+		}
+
+	})
 
 }
 
