@@ -39,12 +39,14 @@ Now to generate a wrapper for this interface we have 2 options:
 1. Put a magic comment for the entire file and passing each interface name with the -t flag.
 
 TODO: add multiple targets using multiple -t args
-```
+
+```golang
 //go:generate promwrapgen -m all -t IPUtil
 type IPUtil interface {
 	PublicIP() (net.IP, error)
 	LocalIPs() ([]net.IP, error)
 }
+```
 
 2. Add a magic comment on top of the file then use `//promwrapgen:<taget-name> [args]` syntax. This method makes the file readable.
 
