@@ -17,7 +17,7 @@ import (
 // TODO find a better way to call with magic comment
 // TODO either by putting a binary in PATH or sth else
 //
-//go:generate go run /home/loop/p/promwrapgen/main.go -m all -t IPUtil
+//go:generate promwrapgen -m all -t IPUtil
 type IPUtil interface {
 	PublicIP() (net.IP, error)
 	LocalIPs() ([]net.IP, error)
