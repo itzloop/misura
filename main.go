@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"flag"
 	"fmt"
 	"log"
@@ -14,11 +15,43 @@ import (
 	"embed"
 )
 
+var (
+	version  = ""
+	commit   = ""
+	builtBy  = ""
+	date     = ""
+	progDesc = "promwrapgen: Wraps interfaces and structs and enables monitoring easily without changing the actual logic"
+	website  = "https//sinashabani.dev"
+)
+
 //go:embed templates/*.gotmpl
 var f embed.FS
 
+//go:embed ascii.txt
+var asciiArt string
+
+func versionString() string {
+	t := template.Must(template.ParseFiles("templates/version.gotmpl"))
+	buf := bytes.Buffer{}
+
+	t.Execute(&buf, map[string]string{
+		"ASCII":     asciiArt,
+		"ProgDesc":  progDesc,
+		"Website":   website,
+		"ProgVer":   version,
+		"GitCommit": commit,
+		"BuildDate": date,
+		"BuiltBy":   builtBy,
+	})
+
+	return buf.String()
+}
+
+
 func main() {
-	fmt.Printf("running command: %s\n", strings.Join(os.Args, " "))
+    var (
+        showVersion bool
+    )
 
 	// should accept multipe targets
 	targetsFlag := flag.String("t", "", "comma seperated target interface(s)")
@@ -26,8 +59,16 @@ func main() {
 possible values [all, duration, total, success, error].
 If all is specified others will be ignored`)
 	formatImports := flag.Bool("fmt", true, "if set to true, will run imports.Process on the generated wrapper")
+    flag.BoolVar(&showVersion, "version", false, "show program version")
+    flag.BoolVar(&showVersion, "v", false, "show program version")
 	flag.Parse()
 
+    if showVersion {
+        fmt.Print(versionString())
+        os.Exit(0)
+    }
+
+	fmt.Printf("running command: %s\n", strings.Join(os.Args, " "))
 	targetsCS := strings.Split(*targetsFlag, ",")
 	if len(targetsCS) == 0 {
 		log.Fatalln("at least one target is needed")
