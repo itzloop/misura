@@ -31,7 +31,7 @@ var f embed.FS
 var asciiArt string
 
 func versionString() string {
-	t := template.Must(template.ParseFiles("templates/version.gotmpl"))
+	t := template.Must(template.ParseFS(f, "templates/version.gotmpl"))
 	buf := bytes.Buffer{}
 
 	t.Execute(&buf, map[string]string{
