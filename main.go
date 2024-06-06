@@ -21,7 +21,7 @@ var (
 	builtBy  = ""
 	date     = ""
 	progDesc = "promwrapgen: Wraps interfaces and structs and enables monitoring easily without changing the actual logic"
-	website  = "https//sinashabani.dev"
+	website  = ""
 )
 
 //go:embed templates/*.gotmpl
