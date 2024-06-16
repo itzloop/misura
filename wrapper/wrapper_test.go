@@ -36,7 +36,7 @@ func TestWrapper(t *testing.T) {
 				tv := createTypeVisitor(t, wd, target.filename, []string{target.target})
 				err := tv.Walk()
 				require.NoError(t, err)
-				require.FileExists(t, path.Join(wd, strings.ReplaceAll(target.filename, path.Ext(target.filename), ".promwrapgen.go")))
+				require.FileExists(t, path.Join(wd, strings.ReplaceAll(target.filename, path.Ext(target.filename), ".misura.go")))
 			},
 		)
 	}
@@ -58,7 +58,7 @@ func TestWrapper(t *testing.T) {
 			err := tv.Walk()
 			require.NoError(t, err)
             for _, target := range target {
-                require.FileExists(t, path.Join(wd, strings.ReplaceAll(f, path.Ext(f), "."+target+".promwrapgen.go")))
+                require.FileExists(t, path.Join(wd, strings.ReplaceAll(f, path.Ext(f), "."+target+".misura.go")))
             }
 		}
 

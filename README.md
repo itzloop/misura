@@ -1,6 +1,6 @@
-# promwrapgen
+# misura
 
-> promwrapgen wraps an interface or a struct and adds prometheus metrics such as success count, error count, total count and duration
+> misura wraps an interface or a struct and adds prometheus metrics such as success count, error count, total count and duration
 
 
 THIS IS A WIP
@@ -21,7 +21,8 @@ THIS IS A WIP
 - [ ] Enable users to extend wrapping functionallity to add custom logic to their interfaces
 - [x] ~~Custom metrics?~~ This is solved by accepting metrics interface.
 - [ ] Per type method inclusion and exlusion
-- [ ] Support both go:generate promwrapgen [args] and //promwrapgen:<target-name> [args]
+- [ ] Support both go:generate misura [args] and //misura:<target-name> [args]
+- [ ] Support third party types
 
 ## Usage
 
@@ -41,24 +42,24 @@ Now to generate a wrapper for this interface we have 2 options:
 TODO: add multiple targets using multiple -t args
 
 ```golang
-//go:generate promwrapgen -m all -t IPUtil
+//go:generate misura -m all -t IPUtil
 type IPUtil interface {
 	PublicIP() (net.IP, error)
 	LocalIPs() ([]net.IP, error)
 }
 ```
 
-2. Add a magic comment on top of the file then use `//promwrapgen:<taget-name> [args]` syntax. This method makes the file readable.
+2. Add a magic comment on top of the file then use `//misura:<taget-name> [args]` syntax. This method makes the file readable.
 
 ```golang
 package main
 
-//go:generate promwrapgen
+//go:generate misura
 import (
 ...
 )
 
-//promwrapgen:IPUtil -m all
+//misura:IPUtil -m all
 type IPUtil interface {
 	PublicIP() (net.IP, error)
 	LocalIPs() ([]net.IP, error)

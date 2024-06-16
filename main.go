@@ -1,3 +1,4 @@
+
 package main
 
 import (
@@ -10,18 +11,18 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/itzloop/promwrapgen/wrapper"
+	"github.com/itzloop/misura/wrapper"
 
 	"embed"
 )
 
 var (
-	version  = ""
-	commit   = ""
-	builtBy  = ""
-	date     = ""
-	progDesc = "promwrapgen: Wraps interfaces and structs and enables monitoring easily without changing the actual logic"
-	website  = ""
+	version  = "v0.0.7-754505d"
+	commit   = "754505de44b1af62718c498ade0df829dc51304a"
+	builtBy  = "golang"
+	date     = "2024-06-16 17:55:38+00:00"
+	progDesc = "misura (Italian for measure) gives isight about a golang type by generating a wrapper for that type"
+	website  = "https://sinashabani.dev"
 )
 
 //go:embed templates/*.gotmpl

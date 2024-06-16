@@ -1,7 +1,7 @@
 package testsamples
 
 import (
-	time "github.com/itzloop/promwrapgen/wrapper/test_samples/mytime"
+	time "github.com/itzloop/misura/wrapper/test_samples/mytime"
 	time2 "time"
 )
 

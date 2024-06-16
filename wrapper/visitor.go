@@ -12,7 +12,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/itzloop/promwrapgen/wrapper/types"
+	"github.com/itzloop/misura/wrapper/types"
 )
 
 type TypeVisitorOpts struct {

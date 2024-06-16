@@ -1,4 +1,4 @@
-module github.com/itzloop/promwrapgen
+module github.com/itzloop/misura
 
 go 1.21.4
 

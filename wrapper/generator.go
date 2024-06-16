@@ -11,7 +11,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/itzloop/promwrapgen/wrapper/types"
+	"github.com/itzloop/misura/wrapper/types"
 	"golang.org/x/tools/imports"
 )
 
@@ -38,7 +38,7 @@ type GeneratorOpts struct {
 	TemplatePath string
 
 	// Suffix will be used to name the generated wrapper.
-	// GOFILE.Suffix.go. By default promwrapgen will be used.j
+	// GOFILE.Suffix.go. By default misura will be used.j
 	Suffix string
 
 	// Metrics will be used to decided what metrics to include.
@@ -105,7 +105,7 @@ func NewWrapperGenerator(opts GeneratorOpts) (*WrapperGenerator, error) {
 	}
 
 	if strings.TrimSpace(w.opts.Suffix) == "" {
-		w.opts.Suffix = "promwrapgen"
+		w.opts.Suffix = "misura"
 	}
 
 	return &w, nil
