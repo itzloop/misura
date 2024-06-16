@@ -173,6 +173,7 @@ This is too much for now
 - [ ] Support third party types
 - [ ] Rename metrics with measures
 - [ ] Rename targets with types
+- [ ] Change `PrometheusWrapper` strings with `MisuraWrapper`.
 
 ## Contrubuting
 
