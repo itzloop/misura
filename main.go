@@ -1,9 +1,7 @@
-
 package main
 
 import (
 	"bytes"
-	"flag"
 	"fmt"
 	"log"
 	"os"
@@ -11,6 +9,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/itzloop/misura/config"
 	"github.com/itzloop/misura/wrapper"
 
 	"embed"
@@ -21,7 +20,7 @@ var (
 	commit   = "754505de44b1af62718c498ade0df829dc51304a"
 	builtBy  = "golang"
 	date     = "2024-06-16 17:55:38+00:00"
-	progDesc = "misura (Italian for measure) gives isight about a golang type by generating a wrapper for that type"
+	progDesc = "misura (Italian for measure) gives insight about a golang type by generating a wrapper"
 	website  = "https://sinashabani.dev"
 )
 
@@ -48,59 +47,59 @@ func versionString() string {
 	return buf.String()
 }
 
-
 func main() {
-    var (
-        showVersion bool
-    )
+	cfg := config.NewConfig(os.Args[0])
 
-	// should accept multipe targets
-	targetsFlag := flag.String("t", "", "comma seperated target interface(s)")
-	metricsflag := flag.String("m", "all", `comma seperated list of metrics to include. 
-possible values [all, duration, total, success, error].
-If all is specified others will be ignored`)
-	formatImports := flag.Bool("fmt", true, "if set to true, will run imports.Process on the generated wrapper")
-    flag.BoolVar(&showVersion, "version", false, "show program version")
-    flag.BoolVar(&showVersion, "v", false, "show program version")
-	flag.Parse()
+	// error will be handled by flag.ExitOnError
+	cfg.Parse(os.Args[1:])
 
-    if showVersion {
-        fmt.Print(versionString())
-        os.Exit(0)
-    }
+	if *cfg.ShowVersion {
+		fmt.Print(versionString())
+		os.Exit(0)
+	}
+
+	if len(*cfg.Measures) == 0 {
+		*cfg.Measures = append(*cfg.Measures, "all")
+	}
+
+	if os.Getenv("GOFILE") != "" {
+		*cfg.FilePath = os.Getenv("GOFILE")
+		fmt.Println("using GOFILE=", *cfg.FilePath)
+	}
 
 	fmt.Printf("running command: %s\n", strings.Join(os.Args, " "))
-	targetsCS := strings.Split(*targetsFlag, ",")
-	if len(targetsCS) == 0 {
-		log.Fatalln("at least one target is needed")
-	}
-
-	metricsCS := strings.Split(*metricsflag, ",")
-	if len(metricsCS) == 0 {
-		metricsCS = append(metricsCS, "all")
-	}
 
 	cwd, err := os.Getwd()
 	if err != nil {
 		panic(err)
 	}
 
-	filePath := path.Join(cwd, os.Getenv("GOFILE"))
-	fmt.Printf("generating prometheus wrapper for '%s'\n", filePath)
+	*cfg.FilePath = path.Join(cwd, *cfg.FilePath)
+	fmt.Printf("generating wrapper for '%s'\n", *cfg.FilePath)
 
 	generator, err := wrapper.NewWrapperGenerator(wrapper.GeneratorOpts{
-		Metrics:       metricsCS,
-		FormatImports: *formatImports,
+		Metrics:       []string(*cfg.Measures),
+		FormatImports: *cfg.FormatImports,
 		Template:      templates(),
 	})
 	if err != nil {
 		log.Fatalf("failed to create WrapperGenerator: %v\n", err)
 	}
 
+	// parse comments for //misura:<Type>
+	cv, err := wrapper.NewCommentVisitor(*cfg.FilePath)
+	if err != nil {
+		log.Fatalf("failed to create CommentVisitor: %v\n", err)
+	}
+
+	err = cv.Walk()
+	if err != nil {
+		log.Fatalf("failed to walk over ast: %v\n", err)
+	}
+
 	visitor, err := wrapper.NewTypeVisitor(generator, wrapper.TypeVisitorOpts{
-		CWD:      cwd,
-		FileName: os.Getenv("GOFILE"),
-		Targets:  targetsCS,
+		FilePath: *cfg.FilePath,
+		Targets:  append([]string(*cfg.Types), cv.Targets()...),
 	})
 	if err != nil {
 		log.Fatalf("failed to create TypeVisitor: %v\n", err)

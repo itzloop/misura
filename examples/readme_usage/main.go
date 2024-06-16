@@ -17,7 +17,9 @@ import (
 // TODO find a better way to call with magic comment
 // TODO either by putting a binary in PATH or sth else
 //
-//go:generate misura -m all -t IPUtil
+//go:generate misura
+
+//misura:IPUtil
 type IPUtil interface {
 	PublicIP() (net.IP, error)
 	LocalIPs() ([]net.IP, error)

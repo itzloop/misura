@@ -16,8 +16,7 @@ import (
 )
 
 type TypeVisitorOpts struct {
-	CWD      string
-	FileName string
+	FilePath string
 	Targets  types.Strings
 }
 
@@ -37,8 +36,7 @@ type TypeVisitor struct {
 }
 
 func NewTypeVisitor(g *WrapperGenerator, opts TypeVisitorOpts) (*TypeVisitor, error) {
-	p := path.Join(opts.CWD, opts.FileName)
-	f, err := os.ReadFile(p)
+	f, err := os.ReadFile(opts.FilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +49,7 @@ func NewTypeVisitor(g *WrapperGenerator, opts TypeVisitorOpts) (*TypeVisitor, er
 
 func (t *TypeVisitor) Walk() error {
 	fset := token.NewFileSet()
-	root, err := parser.ParseFile(fset, t.opts.FileName, t.text, parser.ParseComments)
+	root, err := parser.ParseFile(fset, path.Base(t.opts.FilePath), t.text, parser.ParseComments)
 	if err != nil {
 		return err
 	}
@@ -151,15 +149,15 @@ func (t *TypeVisitor) handleInterface(intrName string, intr *ast.InterfaceType) 
 		return err
 	}
 
-    // if we have mulitple targets in the same file,
-    // split them in seperate files by including the
-    // target in the generated file name
-    filename := t.opts.FileName
-    if len(t.opts.Targets) > 1 {
-        filename = filename + "." + intrName
-    }
+	// if we have mulitple targets in the same file,
+	// split them in seperate files by including the
+	// target in the generated file name
+	filename := path.Base(t.opts.FilePath)
+	if len(t.opts.Targets) > 1 {
+		filename = filename + "." + intrName
+	}
 
-	return t.g.Generate(t.opts.CWD, filename, TemplateVals{
+	return t.g.Generate(path.Dir(t.opts.FilePath), filename, TemplateVals{
 		PackageName:     t.packageName,
 		WrapperTypeName: intrName,
 		MethodList:      methods,

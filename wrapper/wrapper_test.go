@@ -42,7 +42,7 @@ func TestWrapper(t *testing.T) {
 	}
 
 	t.Run("all_targets_compliation", func(t *testing.T) {
-        files := map[string][]string{}
+		files := map[string][]string{}
 		for _, t := range targets {
 			_, ok := files[t.filename]
 			if !ok {
@@ -57,9 +57,9 @@ func TestWrapper(t *testing.T) {
 			tv := createTypeVisitor(t, wd, f, target)
 			err := tv.Walk()
 			require.NoError(t, err)
-            for _, target := range target {
-                require.FileExists(t, path.Join(wd, strings.ReplaceAll(f, path.Ext(f), "."+target+".misura.go")))
-            }
+			for _, target := range target {
+				require.FileExists(t, path.Join(wd, strings.ReplaceAll(f, path.Ext(f), "."+target+".misura.go")))
+			}
 		}
 
 	})
@@ -70,8 +70,7 @@ func createTypeVisitor(t *testing.T, cwd, filename string, targets []string) *Ty
 	t.Helper()
 
 	tv, err := NewTypeVisitor(createGenerator(t), TypeVisitorOpts{
-		CWD:      cwd,
-		FileName: filename,
+		FilePath: path.Join(cwd, filename),
 		Targets:  targets,
 	})
 
