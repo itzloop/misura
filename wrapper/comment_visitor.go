@@ -1,7 +1,6 @@
 package wrapper
 
 import (
-	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
@@ -47,7 +46,6 @@ func (cv *CommentVisitor) Visit(nRaw ast.Node) ast.Visitor {
 
 	switch n := nRaw.(type) {
 	case *ast.Comment:
-		fmt.Println(n.Text)
 		if !strings.Contains(n.Text, "//misura:") {
 			return cv
 		}

@@ -16,10 +16,10 @@ import (
 )
 
 var (
-	version  = "v0.0.9-34c7ef6"
-	commit   = "34c7ef6f97e3c5a9a09b5f7a72b0e36d35f8ac56"
+	version  = "v0.0.9-bf7ba05"
+	commit   = "bf7ba053f15ab549f26950d8b6ba20facfbc395c"
 	builtBy  = "golang"
-	date     = "2024-06-16 23:17:21+00:00"
+	date     = "2024-06-16 23:36:08+00:00"
 	progDesc = "misura (Italian for measure) gives insight about a golang type by generating a wrapper"
 	website  = "https://sinashabani.dev"
 )
